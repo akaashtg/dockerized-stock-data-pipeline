@@ -12,18 +12,7 @@ The pipeline:
 
 ---
 
-## Project Diagram
 
-```mermaid
-flowchart LR
-    A[Alpha Vantage API] -->|JSON Data| B[Airflow Task: fetch_stock_data]
-    B -->|Clean Data| C[Airflow Task: upsert_postgres]
-    C -->|Insert/Update| D[(CrateDB: sp500 Table)]
-    subgraph Airflow
-        B
-        C
-    end
-```
 
 ---
 
