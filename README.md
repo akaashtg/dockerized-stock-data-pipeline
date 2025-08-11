@@ -1,4 +1,4 @@
-# dockerized-airflow-stock-data-pipeline
+# dockerized-stock-market-pipeline with Airflow & CrateDB
 
 ## Overview
 This project implements a **Dockerized data pipeline** using **Apache Airflow** to fetch, process, and store stock market data.  
