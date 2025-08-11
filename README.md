@@ -1,45 +1,129 @@
-Overview
-========
+# Financial Data Pipeline with Airflow & CrateDB
 
-Welcome to Astronomer! This project was generated after you ran 'astro dev init' using the Astronomer CLI. This readme describes the contents of the project, as well as how to run Apache Airflow on your local machine.
+## Overview
+This project implements a **Dockerized data pipeline** using **Apache Airflow** to fetch, process, and store stock market data.  
+It was bootstrapped with the Astronomer CLI (`astro dev init`) and extended to meet the requirements of the assignment.
 
-Project Contents
-================
+The pipeline:
+- Fetches daily stock market data from the **Alpha Vantage API**.
+- Extracts the **adjusted closing price** for each ticker.
+- Stores the data in a **CrateDB table** (`sp500`) via Airflow’s `PostgresHook`.
+- Is fully containerized with **Airflow**, **CrateDB**, and **Postgres** (for Airflow metadata).
 
-Your Astro project contains the following files and folders:
+---
 
-- dags: This folder contains the Python files for your Airflow DAGs. By default, this directory includes one example DAG:
-    - `example_astronauts`: This DAG shows a simple ETL pipeline example that queries the list of astronauts currently in space from the Open Notify API and prints a statement for each astronaut. The DAG uses the TaskFlow API to define tasks in Python, and dynamic task mapping to dynamically print a statement for each astronaut. For more on how this DAG works, see our [Getting started tutorial](https://www.astronomer.io/docs/learn/get-started-with-airflow).
-- Dockerfile: This file contains a versioned Astro Runtime Docker image that provides a differentiated Airflow experience. If you want to execute other commands or overrides at runtime, specify them here.
-- include: This folder contains any additional files that you want to include as part of your project. It is empty by default.
-- packages.txt: Install OS-level packages needed for your project by adding them to this file. It is empty by default.
-- requirements.txt: Install Python packages needed for your project by adding them to this file. It is empty by default.
-- plugins: Add custom or community plugins for your project to this file. It is empty by default.
-- airflow_settings.yaml: Use this local-only file to specify Airflow Connections, Variables, and Pools instead of entering them in the Airflow UI as you develop DAGs in this project.
+## Project Diagram
 
-Deploy Your Project Locally
-===========================
+```mermaid
+flowchart LR
+    A[Alpha Vantage API] -->|JSON Data| B[Airflow Task: fetch_stock_data]
+    B -->|Clean Data| C[Airflow Task: upsert_postgres]
+    C -->|Insert/Update| D[(CrateDB: sp500 Table)]
+    subgraph Airflow
+        B
+        C
+    end
+```
 
-Start Airflow on your local machine by running 'astro dev start'.
+---
 
-This command will spin up five Docker containers on your machine, each for a different Airflow component:
+## Project Contents
 
-- Postgres: Airflow's Metadata Database
-- Scheduler: The Airflow component responsible for monitoring and triggering tasks
-- DAG Processor: The Airflow component responsible for parsing DAGs
-- API Server: The Airflow component responsible for serving the Airflow UI and API
-- Triggerer: The Airflow component responsible for triggering deferred tasks
+```
+.
+├── dags/
+│   └── financial_data_pipeline.py   # Main Airflow DAG (code1)
+├── plugins/                         # Custom plugins (empty)
+├── logs/                            # Airflow logs (auto-generated)
+├── docker-compose.yml               # Runs Airflow + CrateDB + Postgres
+├── .env                             # API keys and DB connection URIs
+├── .astro/config.yaml               # Astronomer local config
+├── Dockerfile                       # Astronomer Runtime image
+├── packages.txt                     # OS packages (empty by default)
+├── requirements.txt                 # Python packages (empty by default)
+├── airflow_settings.yaml             # Local-only Airflow settings
+└── README.md                        # This file
+```
 
-When all five containers are ready the command will open the browser to the Airflow UI at http://localhost:8080/. You should also be able to access your Postgres Database at 'localhost:5432/postgres' with username 'postgres' and password 'postgres'.
+---
 
-Note: If you already have either of the above ports allocated, you can either [stop your existing Docker containers or change the port](https://www.astronomer.io/docs/astro/cli/troubleshoot-locally#ports-are-not-available-for-my-local-airflow-webserver).
+## How the DAG Works
+The DAG (`financial_data_pipeline.py`) contains:
+1. **get_tickers_from_db** — Reads tickers from the `tickers_list` table in CrateDB.
+2. **fetch_stock_data** — Calls the Alpha Vantage API for each ticker and retrieves the latest adjusted close price.
+3. **upsert_postgres** — Inserts or updates rows in the `sp500` table using `ON CONFLICT`.
 
-Deploy Your Project to Astronomer
-=================================
+The DAG is scheduled **daily** but can be adjusted via the DAG definition.
 
-If you have an Astronomer account, pushing code to a Deployment on Astronomer is simple. For deploying instructions, refer to Astronomer documentation: https://www.astronomer.io/docs/astro/deploy-code/
+---
 
-Contact
-=======
+## Running the Project Locally
 
-The Astronomer CLI is maintained with love by the Astronomer team. To report a bug or suggest a change, reach out to our support.
+### 1. Prerequisites
+- [Docker](https://docs.docker.com/get-docker/) installed and running.
+- [Docker Compose](https://docs.docker.com/compose/install/) installed.
+- Astronomer CLI (`brew install astro` on macOS, or see [docs](https://www.astronomer.io/docs/astro/cli/install-cli)).
+
+---
+
+### 2. Set up `.env`
+Create a `.env` file in the project root:
+```env
+# Alpha Vantage API key
+ALPHA_VANTAGE_KEY=YOUR_API_KEY_HERE
+
+# CrateDB connection for Airflow
+AIRFLOW_CONN_CRATEDB_CONNECTION=postgresql://crate:@cratedb:5432/doc?sslmode=disable
+```
+
+---
+
+### 3. Start Services
+
+#### Option A — Run via Astronomer (development mode)
+```bash
+astro dev start
+```
+- Airflow Web UI → [http://localhost:8081](http://localhost:8081) (port set in `.astro/config.yaml`)
+- CrateDB Admin UI → [http://localhost:4200](http://localhost:4200)
+
+#### Option B — Run via Docker Compose (assignment-ready)
+```bash
+docker-compose up
+```
+- Airflow Web UI → [http://localhost:8080](http://localhost:8080)
+- CrateDB Admin UI → [http://localhost:4200](http://localhost:4200)
+
+---
+
+### 4. Create the Target Table in CrateDB
+Run this SQL in CrateDB Admin UI or via `psql`:
+```sql
+CREATE TABLE IF NOT EXISTS sp500 (
+   closing_date TIMESTAMP,
+   ticker TEXT,
+   adjusted_close DOUBLE,
+   PRIMARY KEY (closing_date, ticker)
+);
+```
+
+---
+
+### 5. Trigger the DAG
+1. Open Airflow Web UI.
+2. Unpause the `financial_data_pipeline` DAG.
+3. Trigger manually or wait for the scheduled run.
+
+---
+
+## Deployment
+You can deploy this project to any Astronomer Deployment or Airflow environment by copying:
+- `dags/financial_data_pipeline.py`
+- `.env`
+- `docker-compose.yml`
+
+---
+
+## Contact
+For Alpha Vantage API documentation: [https://www.alphavantage.co/documentation/](https://www.alphavantage.co/documentation/)  
+For Astronomer CLI docs: [https://www.astronomer.io/docs/astro/cli](https://www.astronomer.io/docs/astro/cli)
