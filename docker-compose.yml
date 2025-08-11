@@ -1,0 +1,64 @@
+version: '3.9'
+
+services:
+  # CrateDB for storing financial data
+  cratedb:
+    image: crate:latest
+    container_name: cratedb
+    environment:
+      CRATE_HEAP_SIZE: 1g
+    ports:
+      - "4200:4200"  # CrateDB Admin UI
+      - "5433:5432"  # Postgres wire protocol (mapped to 5433 locally)
+    volumes:
+      - cratedb-data:/data
+
+  # Postgres for Airflow metadata (not for stock data)
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5435:5432"  # Metadata DB port for Airflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  # Airflow Scheduler + Webserver (LocalExecutor)
+  airflow:
+    image: apache/airflow:2.9.0
+    container_name: airflow
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    ports:
+      - "8080:8080"  # Airflow Web UI
+    depends_on:
+      - cratedb
+      - postgres
+    command: >
+      bash -c "
+      airflow db init &&
+      airflow users create
+        --username admin
+        --firstname Admin
+        --lastname User
+        --role Admin
+        --email admin@example.com
+        --password admin &&
+      airflow webserver & airflow scheduler
+      "
+
+volumes:
+  cratedb-data:
+  postgres-data:

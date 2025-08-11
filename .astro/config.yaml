@@ -1,0 +1,12 @@
+project:
+    name: astro-project-2
+webserver:
+   port: 8081
+postgres:
+  port: 5435
+Conn Type: Postgres
+Host: postgres
+Schema: postgres
+Login: postgres
+Password: postgres
+Port: 5432
